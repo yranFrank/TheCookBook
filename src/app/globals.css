@@ -1,8 +1,15 @@
 @import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 你可以在下面加自定义样式 */
+
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --primary: rgb(37, 150, 190);
+  --primary-dark: rgb(30, 120, 160);
+  --primary-light: rgb(80, 180, 210);
 }
 
 @theme inline {
