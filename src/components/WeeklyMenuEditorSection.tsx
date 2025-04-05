@@ -4,16 +4,13 @@ import { useState, useMemo, useEffect } from 'react'
 import { Dialog } from '@headlessui/react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
-import { doc, updateDoc, getDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
 
 const weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const meals = ['早餐', '午餐', '晚餐']
 
-// 获取本周每一天的日期
 const getWeekDates = (): string[] => {
   const today = new Date()
-  const currentDay = today.getDay() === 0 ? 7 : today.getDay() // 周日 → 7
+  const currentDay = today.getDay() === 0 ? 7 : today.getDay()
   const monday = new Date(today)
   monday.setDate(today.getDate() - currentDay + 1)
 
@@ -40,15 +37,16 @@ export default function WeeklyMenuEditorSection({
   const [convertedMenu, setConvertedMenu] = useState<any[]>([])
   const [weekDates, setWeekDates] = useState<string[]>([])
 
-  // 初始化菜单和日期数组
   useEffect(() => {
     const converted = weeklyMenu.map((day: any) => {
       const convertedDay: Record<string, string[]> = {}
       meals.forEach(meal => {
         const val = day?.[meal]
-        if (!val) convertedDay[meal] = []
-        else if (Array.isArray(val)) convertedDay[meal] = val
-        else convertedDay[meal] = [val]
+        convertedDay[meal] = Array.isArray(val)
+          ? val
+          : typeof val === 'string'
+          ? [val]
+          : []
       })
       return convertedDay
     })
@@ -62,7 +60,7 @@ export default function WeeklyMenuEditorSection({
     setOpen(true)
   }
 
-  const handleRecipeSelect = async (recipeId: string) => {
+  const handleRecipeSelect = (recipeId: string) => {
     if (selectedDayIndex === null) return
 
     const current = convertedMenu[selectedDayIndex][selectedMeal] || []
@@ -73,21 +71,8 @@ export default function WeeklyMenuEditorSection({
     const newMenu = [...convertedMenu]
     newMenu[selectedDayIndex][selectedMeal] = updated
     setConvertedMenu(newMenu)
+
     updateMenuItem(selectedDayIndex, selectedMeal, updated)
-
-    const menuRef = doc(db, 'weeklyMenu', 'structured')
-    const snap = await getDoc(menuRef)
-    const existing = snap.exists() ? snap.data().menu : []
-
-    if (!existing[selectedDayIndex]) {
-      existing[selectedDayIndex] = { 早餐: [], 午餐: [], 晚餐: [] }
-    }
-
-    existing[selectedDayIndex][selectedMeal] = updated
-    await updateDoc(menuRef, {
-      menu: existing,
-      updatedAt: new Date(),
-    })
   }
 
   const isSelected = (recipeId: string) => {

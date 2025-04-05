@@ -10,17 +10,43 @@ import {
   orderBy,
   Timestamp,
   limit,
+  where,
+  getDoc,
+  doc
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { useAuth } from '@/hooks/useAuth'
 import { motion } from 'framer-motion'
 
 export default function MessageBoard() {
+  const { user, loading } = useAuth()
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [messages, setMessages] = useState<any[]>([])
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
 
   useEffect(() => {
-    const q = query(collection(db, 'messages'), orderBy('createdAt', 'desc'), limit(5))
+    const fetchInviteCode = async () => {
+      if (!user) return
+      const userRef = doc(db, 'users', user.uid)
+      const userSnap = await getDoc(userRef)
+      if (userSnap.exists()) {
+        const data = userSnap.data()
+        setInviteCode(data.inviteCode || null)
+      }
+    }
+    fetchInviteCode()
+  }, [user])
+
+  useEffect(() => {
+    if (!inviteCode) return
+
+    const q = query(
+      collection(db, 'messages'),
+      where('inviteCode', '==', inviteCode),
+      orderBy('createdAt', 'desc'),
+      limit(5)
+    )
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -28,16 +54,20 @@ export default function MessageBoard() {
       }))
       setMessages(data)
     })
+
     return () => unsubscribe()
-  }, [])
+  }, [inviteCode])
 
   const handleSubmit = async () => {
-    if (!message.trim()) return
+    if (!user || !message.trim() || !inviteCode) return
     setSending(true)
     try {
       await addDoc(collection(db, 'messages'), {
         text: message,
         createdAt: serverTimestamp(),
+        userId: user.uid,
+        userEmail: user.email || null,
+        inviteCode: inviteCode,
       })
       setMessage('')
     } finally {
@@ -45,7 +75,6 @@ export default function MessageBoard() {
     }
   }
 
-  // 时间格式处理
   const formatTime = (timestamp: Timestamp) => {
     const date = timestamp.toDate()
     return `${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`
@@ -58,27 +87,36 @@ export default function MessageBoard() {
           留言板 ❤️
         </h2>
 
-        {/* 输入框 */}
+        {!user && !loading && (
+          <div className="text-red-500 text-lg mb-4">
+            👉 请先登录才能发送留言
+          </div>
+        )}
+
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={5}
-          placeholder="今晚吃什么好呢..."
-          className="w-full text-2xl p-6 bg-white border border-black/10 rounded-3xl resize-none focus:outline-none focus:ring-2 focus:ring-black/20 placeholder:text-gray-400"
+          placeholder={user ? "今晚吃什么好呢..." : "请登录后再留言..."}
+          disabled={!user}
+          className={`w-full text-2xl p-6 bg-white border border-black/10 rounded-3xl resize-none focus:outline-none focus:ring-2 placeholder:text-gray-400
+            ${!user ? 'opacity-50 cursor-not-allowed' : 'focus:ring-black/20'}`}
         />
 
         <button
           onClick={handleSubmit}
-          disabled={sending}
+          disabled={!user || sending}
           className={`mt-6 w-full md:w-auto px-8 py-4 text-xl font-medium rounded-full transition
-            ${sending ? 'bg-gray-400 cursor-not-allowed' : 'bg-black hover:bg-gray-800 text-white'}`}
+            ${!user || sending
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-black hover:bg-gray-800 text-white'
+            }`}
         >
           {sending ? '发送中...' : '发送留言'}
         </button>
 
         <hr className="my-12 border-black/20" />
 
-        {/* 留言展示区域 */}
         <div className="space-y-6">
           <h3 className="text-3xl font-light text-black mb-4">她的留言</h3>
           {messages.length === 0 ? (

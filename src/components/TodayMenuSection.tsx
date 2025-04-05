@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { db } from '@/lib/firebase'
+import { db, auth } from '@/lib/firebase'
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { motion } from 'framer-motion'
 
@@ -45,7 +45,14 @@ export default function TodayMenuSection() {
       const today = new Date()
       const weekdayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1
 
-      const menuSnap = await getDoc(doc(db, 'weeklyMenu', 'structured'))
+      const user = auth.currentUser
+      if (!user) return
+
+      const userSnap = await getDoc(doc(db, 'users', user.uid))
+      const inviteCode = userSnap.exists() ? userSnap.data().inviteCode : null
+      if (!inviteCode) return
+
+      const menuSnap = await getDoc(doc(db, 'weeklyMenus', inviteCode))
       if (!menuSnap.exists()) return
 
       const weeklyMenu = menuSnap.data().menu
@@ -75,7 +82,6 @@ export default function TodayMenuSection() {
   return (
     <section className="relative w-full h-screen bg-[#f0e0c8] text-black flex flex-col justify-center items-center px-6 rounded-3xl">
       <div className="max-w-6xl w-full flex flex-col md:flex-row justify-between items-center gap-12">
-
         <div className="text-black text-[10vw] md:text-[6vw] font-light tracking-widest">
           今日
         </div>

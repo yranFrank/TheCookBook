@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 
 export default function MenuStatsWidgets({
   weeklyMenu,
@@ -11,31 +11,59 @@ export default function MenuStatsWidgets({
   allRecipes: any[]
 }) {
   const [flippedIndex, setFlippedIndex] = useState<number | null>(null)
+  const meals = ['早餐', '午餐', '晚餐']
 
+  // ✅ 收集所有已选菜品 ID
   const allSelectedIds = weeklyMenu.flatMap(day =>
-    Object.values(day).filter(id => id)
+    meals.flatMap(meal => Array.isArray(day[meal]) ? day[meal] : [])
   )
 
-  const selectedRecipes = allRecipes.filter(r => allSelectedIds.includes(r.id))
-  const totalCalories = selectedRecipes.reduce((sum, r) => sum + (r.calories || 0), 0)
+  // ✅ 计算菜品次数 Map
+  const recipeCountMap = new Map<string, number>()
+  allSelectedIds.forEach(id => {
+    recipeCountMap.set(id, (recipeCountMap.get(id) || 0) + 1)
+  })
 
-  const allIngredients = selectedRecipes.flatMap(r => r.ingredients || [])
+  // ✅ 根据 ID 反查菜品详情
+  const selectedRecipes = allRecipes.filter(r => recipeCountMap.has(r.id))
+
+  // ✅ 总热量
+  const totalCalories = selectedRecipes.reduce((sum, r) => {
+    const count = recipeCountMap.get(r.id) || 1
+    return sum + (r.calories || 0) * count
+  }, 0)
+
+  // ✅ 所有材料（含重复）
+  const allIngredients: string[] = []
+  selectedRecipes.forEach(r => {
+    const count = recipeCountMap.get(r.id) || 1
+    for (let i = 0; i < count; i++) {
+      allIngredients.push(...(r.ingredients || []))
+    }
+  })
   const uniqueIngredients = [...new Set(allIngredients)]
 
-  // 🔍 每天的卡路里
+  // ✅ 每日热量统计
   const dailyCalories = weeklyMenu.map(day =>
-    Object.values(day)
-      .map(id => allRecipes.find(r => r.id === id)?.calories || 0)
-      .reduce((a, b) => a + b, 0)
+    meals.reduce((sum, meal) => {
+      const ids: string[] = Array.isArray(day[meal]) ? day[meal] : []
+      return sum + ids.reduce((acc, id) => {
+        const r = allRecipes.find(r => r.id === id)
+        return acc + (r?.calories || 0)
+      }, 0)
+    }, 0)
   )
   const maxDayIndex = dailyCalories.indexOf(Math.max(...dailyCalories))
 
+  // ✅ 卡片数据
   const cards = [
     {
       title: '总热量',
       value: `${totalCalories} kcal`,
       color: '#ff5722',
-      details: selectedRecipes.map(r => `${r.name}：${r.calories || 0} kcal`).join('\n'),
+      details: selectedRecipes
+        .map(r => `${r.name} × ${recipeCountMap.get(r.id)}：${(r.calories || 0) * (recipeCountMap.get(r.id) || 1)} kcal`)
+        .join('\n'),
       extra: `🔥 热量最高的一天：周${maxDayIndex + 1}（${dailyCalories[maxDayIndex]} kcal）`,
     },
     {
@@ -43,14 +71,14 @@ export default function MenuStatsWidgets({
       value: `${uniqueIngredients.length} 种`,
       color: '#3f51b5',
       details: uniqueIngredients.join('、'),
-      extra: `🧂 共计 ${uniqueIngredients.length} 种材料`,
+      extra: `🧂 共计 ${uniqueIngredients.length} 种材料（含重复食材总数：${allIngredients.length}）`,
     },
     {
       title: '已选菜品',
-      value: `${selectedRecipes.length} 道`,
+      value: `${allSelectedIds.length} 道`,
       color: '#009688',
-      details: selectedRecipes.map(r => `✅ ${r.name}`).join('\n'),
-      extra: `📌 菜单已含 ${selectedRecipes.length} 道菜`,
+      details: selectedRecipes.map(r => `✅ ${r.name} × ${recipeCountMap.get(r.id)}`).join('\n'),
+      extra: `📌 菜单共包含 ${selectedRecipes.length} 道不同菜品，共 ${allSelectedIds.length} 次`,
     },
   ]
 

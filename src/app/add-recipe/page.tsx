@@ -13,10 +13,12 @@ import { db } from '@/lib/firebase'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import MenuHeroSection from '@/components/MenuHeroSection'
+import { useAuthUser } from '@/lib/auth'
 
 const categoryOptions = ['清淡', '重口', '减脂', '家常', '高蛋白']
 
 export default function AddRecipePage() {
+  const user = useAuthUser()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [ingredients, setIngredients] = useState([''])
@@ -66,7 +68,13 @@ setAllCategories(Array.from(allCats))
   }
 
   const handleSubmit = async () => {
+    if (!user) {
+      alert('请先登录才能添加菜谱！')
+      return
+    }
+  
     if (!name || !description || ingredients.some(i => !i)) return
+  
     await addDoc(collection(db, 'recipes'), {
       name,
       description,
@@ -74,14 +82,16 @@ setAllCategories(Array.from(allCats))
       categories,
       calories: parseInt(calories) || 0,
       createdAt: serverTimestamp(),
+      userId: user.uid, // ✅ 可选：标记作者
     })
+  
     setName('')
     setDescription('')
     setIngredients([''])
     setCategories([])
     setCalories('')
-
   }
+  
 
   const filteredRecipes = recipes.filter((r) =>
     r.name.toLowerCase().includes(search.toLowerCase()) &&
@@ -235,14 +245,15 @@ setAllCategories(Array.from(allCats))
 </div>
 
 
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            whileHover={{ scale: 1.02 }}
-            onClick={handleSubmit}
-            className="w-full bg-black text-white py-4 rounded-full text-lg font-semibold hover:bg-gray-800 transition"
-          >
-            添加菜谱
-          </motion.button>
+<motion.button
+  onClick={handleSubmit}
+  disabled={!user}
+  className={`w-full py-4 rounded-full text-lg font-semibold transition 
+    ${user ? 'bg-black text-white hover:bg-gray-800' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+>
+  {user ? '添加菜谱' : '请先登录'}
+</motion.button>
+
         </motion.section>
 
         {/* 🧾 菜谱列表展示区域 */}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { db } from '@/lib/firebase'
+import { db, auth } from '@/lib/firebase'
 import { getDoc, doc, setDoc, collection, getDocs } from 'firebase/firestore'
 import { motion } from 'framer-motion'
 import WeeklyMenuEditorSection from '@/components/WeeklyMenuEditorSection'
@@ -11,72 +11,102 @@ const weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '�
 const meals = ['早餐', '午餐', '晚餐']
 
 export default function MenuPlanPage() {
-  const [weeklyMenu, setWeeklyMenu] = useState<any[]>(
-    Array(7).fill(null).map(() => ({ 早餐: '', 午餐: '', 晚餐: '' }))
-  )
+  const [weeklyMenu, setWeeklyMenu] = useState<any[]>(Array(7).fill(null).map(() => ({
+    早餐: [],
+    午餐: [],
+    晚餐: []
+  })))
   const [allRecipes, setAllRecipes] = useState<any[]>([])
   const [today] = useState(new Date())
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
 
-  const weekdayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1
-  const getWeekday = () => weekDays[weekdayIndex]
-  const getRecipeName = (id: string | null) =>
-    allRecipes.find(r => r.id === id)?.name || '未选择'
+  const user = auth.currentUser
 
   useEffect(() => {
     const fetchData = async () => {
-      const menuSnap = await getDoc(doc(db, 'weeklyMenu', 'structured'))
-      if (menuSnap.exists()) {
-        setWeeklyMenu(menuSnap.data().menu)
+      if (!user) return
+
+      // 获取用户的邀请码
+      const userRef = doc(db, 'users', user.uid)
+      const userSnap = await getDoc(userRef)
+      if (userSnap.exists()) {
+        const data = userSnap.data()
+        setInviteCode(data.inviteCode || null)
       }
 
+      if (!inviteCode) return
+
+      // 获取团队的 weeklyMenu
+      const menuSnap = await getDoc(doc(db, 'weeklyMenus', inviteCode))
+      if (menuSnap.exists()) {
+        const menu = menuSnap.data().menu
+        if (Array.isArray(menu) && menu.length === 7) {
+          setWeeklyMenu(menu)
+        }
+      }
+
+      // 获取所有食谱
       const querySnapshot = await getDocs(collection(db, 'recipes'))
       const recipeList: any[] = []
       querySnapshot.forEach((docSnap) => {
-        recipeList.push({
-          id: docSnap.id,
-          ...docSnap.data(),
-        })
+        recipeList.push({ id: docSnap.id, ...docSnap.data() })
       })
-
       setAllRecipes(recipeList)
     }
 
     fetchData()
-  }, [])
+  }, [user, inviteCode])
 
-  const updateMenuItem = (dayIndex: number, meal: string, recipeId: string) => {
+  const updateMenuItem = (dayIndex: number, meal: string, recipeIds: string[]) => {
     const updated = [...weeklyMenu]
-    updated[dayIndex][meal] =
-      updated[dayIndex][meal] === recipeId ? '' : recipeId
+    if (!updated[dayIndex]) {
+      updated[dayIndex] = { 早餐: [], 午餐: [], 晚餐: [] }
+    }
+    updated[dayIndex][meal] = recipeIds
     setWeeklyMenu(updated)
   }
 
   const saveMenu = async () => {
-    await setDoc(doc(db, 'weeklyMenu', 'structured'), {
-      menu: weeklyMenu,
+    if (!inviteCode) {
+      alert('❌ 无法保存菜单，邀请码未找到')
+      return
+    }
+
+    const cleaned = weeklyMenu.map(day => {
+      const obj: any = {}
+      meals.forEach(m => {
+        const ids = day[m]
+        obj[m] = Array.isArray(ids) ? ids.map(id => String(id)) : []
+      })
+      return obj
+    })
+
+    await setDoc(doc(db, 'weeklyMenus', inviteCode), {
+      menu: cleaned,
       updatedAt: new Date(),
     })
-    alert('菜单已保存 ✅')
+
+    alert('✅ 菜单已保存')
+  }
+
+  const weekdayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1
+  const getWeekday = () => weekDays[weekdayIndex]
+
+  const getRecipeName = (ids: string[] | undefined) => {
+    if (!Array.isArray(ids) || ids.length === 0) return '未选择'
+    return ids.map(id => allRecipes.find(r => r.id === id)?.name || '未知').join('、')
   }
 
   return (
     <>
-      {/* Hero Section */}
       <motion.section
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
         className="relative w-full h-screen overflow-hidden bg-black"
       >
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover brightness-[0.6]"
-        >
+        <video autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover brightness-[0.6]">
           <source src="/videos/hero2.webm" type="video/webm" />
-          您的浏览器不支持 video 标签。
         </video>
 
         <div className="relative z-10 w-full h-full flex flex-col justify-center items-start px-10 md:px-20 text-white">
@@ -94,27 +124,20 @@ export default function MenuPlanPage() {
         </div>
       </motion.section>
 
-      {/* 每周菜单编辑区域 */}
       <section className="px-6 md:px-20 py-16 bg-[#fdf5e6] text-black">
         <h2 className="text-3xl font-bold mb-10">🍽️ 本周菜单编辑</h2>
-
         <WeeklyMenuEditorSection
           weeklyMenu={weeklyMenu}
           allRecipes={allRecipes}
           updateMenuItem={updateMenuItem}
         />
-
         <div className="text-right mt-10">
-          <button
-            onClick={saveMenu}
-            className="bg-black text-white px-6 py-3 rounded-full hover:bg-gray-800 transition"
-          >
+          <button onClick={saveMenu} className="bg-black text-white px-6 py-3 rounded-full hover:bg-gray-800 transition">
             保存菜单
           </button>
         </div>
       </section>
 
-      {/* 数据分析区域 */}
       <section className="px-6 md:px-20 py-16 bg-white text-black">
         <MenuStatsWidgets weeklyMenu={weeklyMenu} allRecipes={allRecipes} />
       </section>
