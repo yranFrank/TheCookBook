@@ -7,6 +7,8 @@ import { auth } from '@/lib/firebase'
 
 import Navbar from './Navbar'
 import GlobalLoading from './GlobalLoading'
+import { getDoc, doc } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 
 // ✅ 创建 AuthContext
 export const AuthContext = createContext<{ user: User | null, loading: boolean }>({
@@ -29,10 +31,22 @@ export default function RootLayoutClient({ children }: { children: ReactNode }) 
 
   // ✅ Firebase 登录状态监听
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser)
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
+        const userData = userDoc.exists() ? userDoc.data() : {}
+    
+        // 强制附加 username 到 user 对象上
+        setUser({
+          ...firebaseUser,
+          username: userData.username || '匿名用户',
+        } as any)
+      } else {
+        setUser(null)
+      }
       setLoadingUser(false)
     })
+    
     return () => unsubscribe()
   }, [])
 

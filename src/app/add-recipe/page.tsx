@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import MenuHeroSection from '@/components/MenuHeroSection'
 import { useAuthUser } from '@/lib/auth'
+import { getDoc, updateDoc, doc } from 'firebase/firestore'
 
 const categoryOptions = ['清淡', '重口', '减脂', '家常', '高蛋白']
 
@@ -30,24 +31,58 @@ export default function AddRecipePage() {
   const [allCategories, setAllCategories] = useState<string[]>([])
   const [newCategoryInput, setNewCategoryInput] = useState('')
 
-
+  async function fixMissingUsernames(recipes: any[]) {
+    let updated = false
+  
+    for (const recipe of recipes) {
+      if (!recipe.username && recipe.userId) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', recipe.userId))
+          if (userDoc.exists()) {
+            const userData = userDoc.data()
+            const username = userData.username || '匿名用户'
+  
+            await updateDoc(doc(db, 'recipes', recipe.id), {
+              username,
+            })
+  
+            updated = true
+          }
+        } catch (err) {
+          console.error(`❌ 回填用户名失败：${recipe.id}`, err)
+        }
+      }
+    }
+  
+    // 如果有任何更新，强制重新加载一次数据
+    if (updated) {
+      const q = query(collection(db, 'recipes'), orderBy('createdAt', 'desc'))
+      const snapshot = await getDocs(q)
+      const newList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      setRecipes(newList)
+    }
+  }
+  
+  
 
   useEffect(() => {
     const q = query(collection(db, 'recipes'), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       setRecipes(list)
+      fixMissingUsernames(list)
+  
+      // ✅ 正确地在这里提取分类
+      const allCats = new Set<string>()
+      list.forEach(recipe => {
+        recipe.categories?.forEach((c: string) => allCats.add(c))
+      })
+      setAllCategories(Array.from(allCats))
     })
-    // 加载所有已有分类
-    const allCats = new Set<string>()
-recipes.forEach(recipe => {
-  recipe.categories?.forEach((c: string) => allCats.add(c))
-})
-setAllCategories(Array.from(allCats))
-
-
+  
     return () => unsub()
   }, [])
+  
 
   const handleAddIngredient = () => {
     setIngredients([...ingredients, ''])
@@ -82,9 +117,10 @@ setAllCategories(Array.from(allCats))
       categories,
       calories: parseInt(calories) || 0,
       createdAt: serverTimestamp(),
-      userId: user.uid, // ✅ 可选：标记作者
+      userId: user.uid,
+      username: user.username || '匿名用户', // ✅ 加上这句
     })
-  
+    
     setName('')
     setDescription('')
     setIngredients([''])
@@ -313,6 +349,14 @@ setAllCategories(Array.from(allCats))
                       <p className="text-gray-700 text-sm mb-4 leading-relaxed line-clamp-3">
                         {r.description}
                       </p>
+
+                      <p className="text-sm text-gray-400 mb-2">
+  作者：{r.username || (r.email ? r.email.split('@')[0] : '未知作者')}
+</p>
+
+
+
+
                       <p className="text-sm text-gray-500 mb-4">
                         <span className="font-medium text-gray-700">材料：</span>
                         {r.ingredients?.join('、')}
