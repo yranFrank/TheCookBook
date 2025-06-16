@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState, createContext, ReactNode } from 'react'
 import { onAuthStateChanged, User } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
+import { saveAuthToken } from '@/lib/auth'
 
 import Navbar from './Navbar'
 import GlobalLoading from './GlobalLoading'
@@ -35,7 +36,9 @@ export default function RootLayoutClient({ children }: { children: ReactNode }) 
       if (firebaseUser) {
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
         const userData = userDoc.exists() ? userDoc.data() : {}
-    
+
+        await saveAuthToken() // 🌟 登录状态变更时刷新 token
+
         // 强制附加 username 到 user 对象上
         setUser({
           ...firebaseUser,
